@@ -1,6 +1,7 @@
 import { AgentCharacter } from "../AgentCharacter";
 import { useAgentAppearanceDraft } from "../../hooks/useAgentAppearanceDraft";
-import { AiConnectionField, aiProviderForAdapter } from "../ai-connections/AiConnectionField";
+import { AiConnectionField } from "../ai-connections/AiConnectionField";
+import { aiProviderForAdapter } from "../ai-connections/model";
 import type { AiConnectionBinding } from "@paperclipai/shared";
 import { DEFAULT_CODEX_LOCAL_MODEL } from "@paperclipai/adapter-codex-local";
 import {

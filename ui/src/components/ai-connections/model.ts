@@ -77,6 +77,31 @@ export function opencodeModelProvider(provider?: AiProvider): AiProvider | undef
     method?.adapters.includes("opencode_local")) ? provider : undefined;
 }
 
+/** The provider an adapter falls back to when the agent has not chosen one. */
+const ADAPTER_PROVIDER_DEFAULTS: Record<string, AiProvider> = {
+  claude_local: "anthropic",
+  codex_local: "openai",
+  opencode_local: "openrouter",
+  grok_local: "xai",
+};
+
+/** Every provider this adapter can be reached through, the adapter's usual one
+ * first. A gateway that speaks the same protocol is a peer of the vendor it
+ * stands in for, so the choice belongs to whoever configures the agent. */
+export function aiProvidersForAdapter(adapterType: string): AiProvider[] {
+  const supported = (Object.keys(AI_PROVIDERS) as AiProvider[]).filter((provider) =>
+    Object.values(AI_CONNECTION_CAPABILITIES[provider].methods).some((method) =>
+      method?.adapters.includes(adapterType)));
+  const preferred = ADAPTER_PROVIDER_DEFAULTS[adapterType];
+  return preferred && supported.includes(preferred)
+    ? [preferred, ...supported.filter((provider) => provider !== preferred)]
+    : supported;
+}
+
+export function aiProviderForAdapter(adapterType: string): AiProvider | undefined {
+  return aiProvidersForAdapter(adapterType)[0];
+}
+
 export function aiMethodLabel(provider: AiProvider, method: AiAuthMethod) {
   return method === "subscription"
     ? (AI_PROVIDERS[provider].subscriptionName ?? "Subscription unavailable")

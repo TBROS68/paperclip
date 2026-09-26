@@ -254,12 +254,13 @@ PAPERCLIP_OPENCODE_SMALL_MODEL=vilao/gpt-4o-mini
 
 ### Vilao as a first-class AI provider
 
-Vilao is also a **provider in the product**, not only an env-level fallback:
-Settings → AI Keys lists *Vilao* alongside Claude, OpenAI, OpenRouter and
-Grok, and the key is stored as `VILAO_API_KEY` (`AI_CONNECTION_CAPABILITIES.vilao`
-in `packages/shared/src/ai-connections.ts`). Adding a Vilao connection to a
-`codex_local` or `opencode_local` agent makes the server write, into that run's
-environment, the routing the adapter needs:
+Vilao is also a **provider in the product**, not only an env-level fallback: an
+agent's **AI connection** field offers *Vilao* next to Claude, OpenAI,
+OpenRouter and Grok whenever its harness can be reached through Vilao
+(`codex_local` and `opencode_local`), and the key is stored as `VILAO_API_KEY`
+(`AI_CONNECTION_CAPABILITIES.vilao` in `packages/shared/src/ai-connections.ts`).
+Adding a Vilao connection to a `codex_local` or `opencode_local` agent makes the
+server write, into that run's environment, the routing the adapter needs:
 
 | Written into the managed run | Value |
 |-----------------------------|-------|
@@ -270,6 +271,7 @@ environment, the routing the adapter needs:
 The adapter then synthesizes the same `openai_custom` Codex/OpenCode provider
 as the env fallback, pointed at Vilao — so nothing has to be configured on the
 host. Model names stay whatever Vilao serves: `gpt-4o` for `codex_local`,
-`openai_custom/gpt-4o` for `opencode_local`.
+`openai_custom/gpt-4o` for `opencode_local`. The OpenCode model list is not
+fetched from Vilao, so that model is typed into the model field by hand.
 
 ## Secrets

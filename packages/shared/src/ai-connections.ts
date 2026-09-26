@@ -125,6 +125,16 @@ export const AI_CONNECTION_CAPABILITIES: Record<
     },
   },
 };
+/** The provider id OpenCode registers for this provider's credentials. A
+ * gateway is reached through the synthesized `openai_custom` provider, while a
+ * vendor with its own OpenCode integration is registered under its own name. */
+export function aiOpencodeProviderId(provider: AiProvider): string {
+  return Object.values(AI_CONNECTION_CAPABILITIES[provider].methods).some(
+    (method) => method?.baseUrl,
+  )
+    ? "openai_custom"
+    : provider;
+}
 export function isAiConnectionCompatible(
   requirement: AiConnectionMetadata | AiConnectionBinding,
   adapterType: string,
@@ -146,11 +156,14 @@ export function isAiConnectionCompatible(
   const candidates = "mode" in requirement && requirement.mode === "responsible_user"
     ? Object.values(methods)
     : requirement.method ? [methods[requirement.method]] : [];
-  return (
-    candidates.some((method) => method?.adapters.includes(adapterType)) &&
-    (requirement.provider !== "openrouter" ||
-      (typeof model === "string" && model.startsWith("openrouter/")))
-  );
+  const routed = candidates.filter((method) => method?.adapters.includes(adapterType));
+  if (!routed.length) return false;
+  // OpenCode addresses every model as `<provider>/<model>`, so it can only
+  // serve the namespace the runtime registers for the chosen provider. Other
+  // harnesses name the model itself and never see a namespace.
+  if (adapterType !== "opencode_local") return true;
+  return typeof model === "string" &&
+    model.startsWith(`${aiOpencodeProviderId(requirement.provider)}/`);
 }
 export type AiConnectionUnavailableReason =
   | "responsible_user_missing"

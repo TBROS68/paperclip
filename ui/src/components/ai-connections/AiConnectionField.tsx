@@ -8,7 +8,8 @@ import {
   type AiProvider,
 } from "@paperclipai/shared";
 import { aiConnectionsApi } from "@/api/ai-connections";
-import { AI_PROVIDERS, defaultAiMethod } from "./model";
+import { AI_PROVIDERS, aiProvidersForAdapter, defaultAiMethod } from "./model";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AiConnectionPicker } from "./AiConnectionPicker";
 import { AiConnectionLegacyNotice } from "./AiConnectionManagement";
 import { AiConnectionCredentialStep } from "./AiConnectionCredentialStep";
@@ -22,18 +23,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-export function aiProviderForAdapter(
-  adapterType: string,
-): AiProvider | undefined {
-  return (
-    {
-      claude_local: "anthropic",
-      codex_local: "openai",
-      opencode_local: "openrouter",
-      grok_local: "xai",
-    } as Record<string, AiProvider>
-  )[adapterType];
-}
 export function AiConnectionField({
   companyId,
   agentId,
@@ -57,7 +46,10 @@ export function AiConnectionField({
   legacy?: boolean;
   readOnly?: boolean;
 }) {
-  const provider = aiProviderForAdapter(adapterType);
+  const providers = aiProvidersForAdapter(adapterType);
+  const [chosenProvider, setChosenProvider] = useState<AiProvider>();
+  const bound = value?.provider && providers.includes(value.provider) ? value.provider : undefined;
+  const provider = chosenProvider ?? bound ?? providers[0];
   const returnFocus = useRef<HTMLElement | null>(null);
   const restoreFocus = (event: Event) => { event.preventDefault(); returnFocus.current?.focus(); };
   const [adopting, setAdopting] = useState(false);
@@ -91,6 +83,26 @@ export function AiConnectionField({
           This connection does not support the current harness and model. Choose
           a compatible connection before saving.
         </p>
+      )}
+      {providers.length > 1 && !readOnly && (
+        <label className="block space-y-2 text-sm">
+          Model provider
+          <Select
+            value={provider}
+            onValueChange={(next) => setChosenProvider(next as AiProvider)}
+          >
+            <SelectTrigger aria-label="Model provider" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {providers.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {AI_PROVIDERS[item].name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
       )}
       <AiConnectionPicker
         requirement={{ companyId, provider }}

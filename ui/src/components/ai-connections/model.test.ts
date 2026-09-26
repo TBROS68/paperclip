@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   aiConnectionProblem,
+  aiProviderForAdapter,
+  aiProvidersForAdapter,
   bindingProblem,
   defaultAiMethod,
   matchesAiRequirement,
@@ -172,5 +174,14 @@ describe("provider capabilities", () => {
     expect(opencodeModelProvider("vilao")).toBe("vilao");
     expect(opencodeModelProvider("anthropic")).toBeUndefined();
     expect(opencodeModelProvider()).toBeUndefined();
+  });
+  it("offers an adapter every provider it can be reached through", () => {
+    expect(aiProvidersForAdapter("codex_local")).toEqual(["openai", "vilao"]);
+    expect(aiProvidersForAdapter("opencode_local")).toEqual(["openrouter", "vilao"]);
+    expect(aiProvidersForAdapter("claude_local")).toEqual(["anthropic"]);
+    expect(aiProvidersForAdapter("grok_local")).toEqual(["xai"]);
+    expect(aiProvidersForAdapter("kimi_local")).toEqual([]);
+    expect(aiProviderForAdapter("opencode_local")).toBe("openrouter");
+    expect(aiProviderForAdapter("kimi_local")).toBeUndefined();
   });
 });

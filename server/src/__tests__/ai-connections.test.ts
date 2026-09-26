@@ -485,7 +485,9 @@ describe("managed AI connections", () => {
     expect(isAiConnectionCompatible(binding, "paperclip_runner", "same-model", "acpx", "codex")).toBe(false);
     expect(isAiConnectionCompatible({ provider: "openrouter", method: "api_key" }, "opencode_local", "anthropic/model")).toBe(false);
     expect(isAiConnectionCompatible({ provider: "vilao", method: "api_key" }, "codex_local")).toBe(true);
-    expect(isAiConnectionCompatible({ provider: "vilao", method: "api_key" }, "opencode_local")).toBe(true);
+    // A gateway is reached as the synthesized openai_custom OpenCode provider.
+    expect(isAiConnectionCompatible({ provider: "vilao", method: "api_key" }, "opencode_local", "openai_custom/gpt-4o-mini")).toBe(true);
+    expect(isAiConnectionCompatible({ provider: "vilao", method: "api_key" }, "opencode_local", "vilao/gpt-4o-mini")).toBe(false);
     expect(isAiConnectionCompatible({ provider: "vilao", method: "api_key" }, "claude_local")).toBe(false);
   });
   it("does not let a forged delegation bypass human access or accept an expired subscription attempt", async () => {
