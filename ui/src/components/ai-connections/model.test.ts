@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   aiConnectionProblem,
   bindingProblem,
+  defaultAiMethod,
   matchesAiRequirement,
+  opencodeModelProvider,
   personalAiDefault,
+  subscriptionAdapter,
   type AiConnectionSummary,
   type AiConnectionRequirement,
   type AiConnectionBinding,
@@ -148,5 +151,26 @@ describe("AI connection selection presentation", () => {
         unavailableReason: "Not in the shared audience",
       }),
     ).toBe("Not in the shared audience");
+  });
+});
+
+describe("provider capabilities", () => {
+  it("signs a provider with a subscription into the adapter that owns it", () => {
+    expect(subscriptionAdapter("anthropic")).toBe("claude_local");
+    expect(subscriptionAdapter("openai")).toBe("codex_local");
+    expect(subscriptionAdapter("xai")).toBe("grok_local");
+    expect(defaultAiMethod("anthropic")).toBe("subscription");
+  });
+  it("connects a provider without a subscription lane with an API key", () => {
+    expect(subscriptionAdapter("openrouter")).toBeUndefined();
+    expect(subscriptionAdapter("vilao")).toBeUndefined();
+    expect(defaultAiMethod("openrouter")).toBe("api_key");
+    expect(defaultAiMethod("vilao")).toBe("api_key");
+  });
+  it("names every provider OpenCode is routed to for its model list", () => {
+    expect(opencodeModelProvider("openrouter")).toBe("openrouter");
+    expect(opencodeModelProvider("vilao")).toBe("vilao");
+    expect(opencodeModelProvider("anthropic")).toBeUndefined();
+    expect(opencodeModelProvider()).toBeUndefined();
   });
 });

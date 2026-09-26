@@ -1,11 +1,17 @@
 /** Redacted presentation contracts shared with the production API. */
-import type { AiProvider, AiAuthMethod, AiManagedConnectionSummary, AiConnectionBinding } from "@paperclipai/shared";
+import {
+  AI_CONNECTION_CAPABILITIES,
+  type AiProvider,
+  type AiAuthMethod,
+  type AiManagedConnectionSummary,
+  type AiConnectionBinding,
+} from "@paperclipai/shared";
 export type { AiProvider, AiAuthMethod, AiConnectionBinding } from "@paperclipai/shared";
 export type AiConnectionStatus = AiManagedConnectionSummary["status"];
 
 export const AI_PROVIDERS: Record<
   AiProvider,
-  { name: string; subscriptionName?: string; logo?: string }
+  { name: string; subscriptionName?: string; logo?: string; darkLogo?: string }
 > = {
   anthropic: {
     name: "Claude",
@@ -22,8 +28,13 @@ export const AI_PROVIDERS: Record<
     name: "Grok",
     subscriptionName: "Grok subscription",
     logo: "/brands/adapters/grok.svg",
+    darkLogo: "/brands/adapters/grok-dark.svg",
   },
-  vilao: { name: "Vilao", logo: "/brands/apps/vilao.svg" },
+  vilao: {
+    name: "Vilao",
+    logo: "/brands/apps/vilao.svg",
+    darkLogo: "/brands/apps/vilao-dark.svg",
+  },
 };
 
 export type AiConnectionSummary = Omit<AiManagedConnectionSummary, "isDefault"> & { isDefault?: boolean };
@@ -40,6 +51,31 @@ export const AI_CONNECTION_STATUS: Record<AiConnectionStatus, string> = {
   expired: "Expired",
   revoked: "Revoked",
 };
+
+export type SubscriptionAdapterType = "claude_local" | "codex_local" | "grok_local";
+
+/** The CLI that signs in to this provider, or undefined when the provider is
+ * reached with an API key only. Read from the shared capability table so a new
+ * provider never needs another branch in the connection flow. */
+export function subscriptionAdapter(provider: AiProvider): SubscriptionAdapterType | undefined {
+  const adapter = AI_CONNECTION_CAPABILITIES[provider].methods.subscription?.adapters[0];
+  return adapter === "claude_local" || adapter === "codex_local" || adapter === "grok_local"
+    ? adapter
+    : undefined;
+}
+
+/** How a provider is connected when nothing else says otherwise. */
+export function defaultAiMethod(provider: AiProvider): AiAuthMethod {
+  return subscriptionAdapter(provider) ? "subscription" : "api_key";
+}
+
+/** OpenCode's model list comes from whichever provider owns the connection, so
+ * every provider that routes to OpenCode — not just one — names it here. */
+export function opencodeModelProvider(provider?: AiProvider): AiProvider | undefined {
+  if (!provider) return undefined;
+  return Object.values(AI_CONNECTION_CAPABILITIES[provider].methods).some((method) =>
+    method?.adapters.includes("opencode_local")) ? provider : undefined;
+}
 
 export function aiMethodLabel(provider: AiProvider, method: AiAuthMethod) {
   return method === "subscription"

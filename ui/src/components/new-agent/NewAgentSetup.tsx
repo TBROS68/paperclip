@@ -925,6 +925,7 @@ function Setup({
                                                 xai: "xAI",
                                                 groq: "Groq",
                                                 opencode: "OpenCode",
+                                                vilao: "Vilao",
                                               }[key] ?? key)}
                                     </option>
                                   ))}

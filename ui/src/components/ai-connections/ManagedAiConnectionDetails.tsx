@@ -5,7 +5,7 @@ import { aiConnectionsApi } from "@/api/ai-connections";
 import { toolsApi } from "@/api/tools";
 import { useNavigate } from "@/lib/router";
 import { AiConnectionAccountControls } from "./AiConnectionAccountControls";
-import type { ToolConnection } from "@paperclipai/shared";
+import type { ToolConnection, AiProvider, AiAuthMethod } from "@paperclipai/shared";
 import { aiMethodLabel } from "./model";
 
 export function ManagedAiConnectionRow({
@@ -15,8 +15,8 @@ export function ManagedAiConnectionRow({
 }) {
   const metadata = connection.config?.ai as
     | {
-        provider: "anthropic" | "openai" | "openrouter" | "xai";
-        method: "subscription" | "api_key";
+        provider: AiProvider;
+        method: AiAuthMethod;
       }
     | undefined;
   if (!metadata) return null;

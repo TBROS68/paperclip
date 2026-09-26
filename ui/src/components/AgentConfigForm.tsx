@@ -1,5 +1,6 @@
 import { AiConnectionField } from "./ai-connections/AiConnectionField";
 import { aiConnectionBindingSchema } from "@paperclipai/shared";
+import { opencodeModelProvider } from "@/components/ai-connections/model";
 import { testAgentSetup } from "@/lib/test-agent-setup";
 import { setupEfforts } from "../lib/agent-setup-fields";
 import { RuntimeTestCard } from "./RuntimeTestCard";
@@ -891,9 +892,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     ? String(isCreate ? props.values.adapterSchemaValues?.provider ?? "codex"
       : eff("adapterConfig", "provider", config.provider === "acpx" && config.acpxAgent === "codex" ? "codex" : config.provider ?? "codex"))
     : undefined;
-  const modelProvider = adapterType === "opencode_local" && aiConnectionBindingSchema.safeParse(
+  const aiConnectionProvider = aiConnectionBindingSchema.safeParse(
     (overlay.runtime.runtimeConfig as Record<string, unknown> | undefined)?.aiConnection ?? runtimeConfig.aiConnection,
-  ).data?.provider === "openrouter" ? "openrouter" : runnerProvider;
+  ).data?.provider;
+  const modelProvider = adapterType === "opencode_local"
+    ? opencodeModelProvider(aiConnectionProvider) ?? runnerProvider
+    : runnerProvider;
   // Fetch adapter models for the effective provider, including unsaved changes.
   const modelQueryKey = selectedCompanyId
     ? queryKeys.agents.adapterModels(selectedCompanyId, adapterType, currentDefaultEnvironmentId || null, modelProvider)

@@ -8,6 +8,7 @@ import {
   type AiProvider,
 } from "@paperclipai/shared";
 import { aiConnectionsApi } from "@/api/ai-connections";
+import { AI_PROVIDERS, defaultAiMethod } from "./model";
 import { AiConnectionPicker } from "./AiConnectionPicker";
 import { AiConnectionLegacyNotice } from "./AiConnectionManagement";
 import { AiConnectionCredentialStep } from "./AiConnectionCredentialStep";
@@ -72,10 +73,10 @@ export function AiConnectionField({
     queryFn: () => aiConnectionsApi.list(companyId, agentId),
     enabled: Boolean(provider),
   });
+  if (!provider) return null;
   const method: AiAuthMethod = (value?.mode !== "responsible_user" ? value?.method : undefined)
     ?? accounts.data?.connections.find((account) => account.provider === provider && account.isDefault)?.method
-    ?? (provider === "openrouter" ? "api_key" : "subscription");
-  if (!provider) return null;
+    ?? defaultAiMethod(provider);
   if (legacy && !value && !adopting)
     return (
       <AiConnectionLegacyNotice
@@ -160,7 +161,7 @@ export function AiConnectionField({
             companyId={companyId}
             provider={provider}
             initialMethod={method}
-            name={`My ${provider === "anthropic" ? "Claude" : provider === "openai" ? "OpenAI" : provider === "xai" ? "Grok" : "OpenRouter"} ${method === "subscription" ? "subscription" : "API"}`}
+            name={`My ${AI_PROVIDERS[provider].name} ${method === "subscription" ? "subscription" : "API"}`}
             ownership="personal"
             agentIds={agentId ? [agentId] : []}
             allAgents={false}

@@ -12,6 +12,7 @@ import { instanceSettingsApi } from "@/api/instanceSettings";
 import { queryKeys } from "@/lib/queryKeys";
 import { resolveAdapterTestEnvironmentId, resolveLocalDefaultEnvironmentId, resolveManagedSandboxEnvironmentId } from "@/lib/adapter-test-environment";
 import { resolveForcedKubernetesEnvironment } from "@/lib/forced-kubernetes-environment";
+import { subscriptionAdapter } from "./model";
 
 type Props = {
   companyId: string;
@@ -30,7 +31,7 @@ type Props = {
 
 /** Connections hosts the same provider step as agent setup, with its own save intent. */
 export function AiConnectionCredentialStep(props: Props) {
-  if (props.provider === "openrouter") return <ApiKeyConnectionStep {...props} />;
+  if (!subscriptionAdapter(props.provider)) return <ApiKeyConnectionStep {...props} />;
   return <SubscriptionConnectionStep {...props} />;
 }
 
@@ -83,7 +84,7 @@ function SubscriptionConnectionStep({ companyId, provider, initialMethod, fixedM
     {loading ? <p role="status" className="text-sm text-muted-foreground">Preparing sign-in…</p> : <AgentProviderConnection
       key={environmentId ?? "local"}
       companyId={companyId}
-      adapterType={provider === "anthropic" ? "claude_local" : provider === "xai" ? "grok_local" : "codex_local"}
+      adapterType={subscriptionAdapter(provider) ?? "codex_local"}
       environmentId={environmentId}
       canLogin={canLogin}
       localEnvironment={environment?.driver === "local"}
