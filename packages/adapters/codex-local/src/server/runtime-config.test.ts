@@ -413,4 +413,89 @@ describe("prepareCodexRuntimeConfig", () => {
     const content = await readConfigToml(home);
     expect(content).toBe("model = \"gpt-5.1-codex\"\n");
   });
+
+  describe("OPENAI_BASE_URL convenience fallback", () => {
+    it("synthesizes provider openai_custom from OPENAI_BASE_URL when JSON is unset", async () => {
+      const home = await makeCodexHome();
+      const prepared = await prepareCodexRuntimeConfig({
+        env: { OPENAI_BASE_URL: "https://api.vilao.ai/v1" },
+        codexHome: home,
+      });
+      const content = await readConfigToml(home);
+      expect(content).toContain('model_provider = "openai_custom"');
+      expect(content).toContain("[model_providers.openai_custom]");
+      expect(content).toContain('base_url = "https://api.vilao.ai/v1"');
+      expect(content).toContain('env_key = "OPENAI_API_KEY"');
+      expect(content).toContain('wire_api = "responses"');
+      expect(prepared.notes.some((n) => n.includes("OPENAI_BASE_URL"))).toBe(true);
+      await prepared.cleanup();
+      await expect(fs.access(path.join(home, "config.toml"))).rejects.toThrow();
+    });
+
+    it("respects OPENAI_API_KEY_ENV and OPENAI_WIRE_API overrides", async () => {
+      const home = await makeCodexHome();
+      const prepared = await prepareCodexRuntimeConfig({
+        env: {
+          OPENAI_BASE_URL: "https://api.vilao.ai/v1",
+          OPENAI_API_KEY_ENV: "VILAO_API_KEY",
+          OPENAI_WIRE_API: "chat_completions",
+        },
+        codexHome: home,
+      });
+      const content = await readConfigToml(home);
+      expect(content).toContain('env_key = "VILAO_API_KEY"');
+      expect(content).toContain('wire_api = "chat_completions"');
+      await prepared.cleanup();
+    });
+
+    it("reads OPENAI_BASE_URL from process.env when absent from the run env", async () => {
+      const home = await makeCodexHome();
+      process.env.OPENAI_BASE_URL = "https://api.vilao.ai/v1";
+      try {
+        const prepared = await prepareCodexRuntimeConfig({ env: {}, codexHome: home });
+        const content = await readConfigToml(home);
+        expect(content).toContain("[model_providers.openai_custom]");
+        await prepared.cleanup();
+      } finally {
+        delete process.env.OPENAI_BASE_URL;
+      }
+    });
+
+    it("uses PAPERCLIP_CODEX_PROVIDERS when both JSON and OPENAI_BASE_URL are set", async () => {
+      const home = await makeCodexHome();
+      const prepared = await prepareCodexRuntimeConfig({
+        env: {
+          OPENAI_BASE_URL: "https://api.vilao.ai/v1",
+          PAPERCLIP_CODEX_PROVIDERS: JSON.stringify(BIFROST_PROVIDERS),
+        },
+        codexHome: home,
+      });
+      const content = await readConfigToml(home);
+      expect(content).toContain("[model_providers.bifrost]");
+      expect(content).not.toContain("[model_providers.openai_custom]");
+      expect(prepared.notes.some((n) => n.includes("OPENAI_BASE_URL"))).toBe(false);
+      await prepared.cleanup();
+    });
+
+    it("stays silent when OPENAI_BASE_URL is empty or whitespace", async () => {
+      const home = await makeCodexHome("model = \"gpt-5.1-codex\"\n");
+      for (const env of [{ OPENAI_BASE_URL: "" }, { OPENAI_BASE_URL: "  " }]) {
+        const prepared = await prepareCodexRuntimeConfig({ env, codexHome: home });
+        expect(prepared.notes).toEqual([]);
+        expect(await readConfigToml(home)).toBe("model = \"gpt-5.1-codex\"\n");
+        await prepared.cleanup();
+      }
+    });
+
+    it("surfaces a note when CODEX_HOME is explicitly configured even via OPENAI_BASE_URL", async () => {
+      const prepared = await prepareCodexRuntimeConfig({
+        env: { OPENAI_BASE_URL: "https://api.vilao.ai/v1" },
+        codexHome: null,
+      });
+      const allNotes = prepared.notes.join("\n");
+      expect(allNotes).toContain("CODEX_HOME");
+      expect(allNotes).toContain("OPENAI_BASE_URL");
+      await prepared.cleanup();
+    });
+  });
 });

@@ -309,6 +309,127 @@ describe("prepareOpenCodeRuntimeConfig", () => {
     await prepared.cleanup();
   });
 
+  describe("OPENAI_BASE_URL convenience fallback", () => {
+    it("synthesizes provider openai_custom from OPENAI_BASE_URL when JSON is unset", async () => {
+      const configHome = await makeConfigHome({ permission: { read: "allow" } });
+      const prepared = await prepareOpenCodeRuntimeConfig({
+        env: { XDG_CONFIG_HOME: configHome, OPENAI_BASE_URL: "https://api.vilao.ai/v1", OPENAI_API_KEY: "sk-vilao-test" },
+        config: {},
+      });
+      cleanupPaths.add(prepared.env.XDG_CONFIG_HOME);
+      const runtimeConfig = JSON.parse(
+        await fs.readFile(path.join(prepared.env.XDG_CONFIG_HOME, "opencode", "opencode.json"), "utf8"),
+      ) as {
+        provider: {
+          openai_custom: {
+            npm: string; name: string;
+            options: { baseURL: string; apiKey: string };
+            models: Record<string, unknown>;
+          };
+        };
+      };
+      expect(runtimeConfig.provider.openai_custom.npm).toBe("@ai-sdk/openai-compatible");
+      expect(runtimeConfig.provider.openai_custom.options.baseURL).toBe("https://api.vilao.ai/v1");
+      // The {env:...} placeholder is baked server-side when the key is present.
+      expect(runtimeConfig.provider.openai_custom.options.apiKey).toBe("sk-vilao-test");
+      expect(runtimeConfig.provider.openai_custom.models).toEqual({});
+      expect(prepared.notes.some((n) => n.includes("OPENAI_BASE_URL"))).toBe(true);
+      await prepared.cleanup();
+      cleanupPaths.delete(prepared.env.XDG_CONFIG_HOME);
+    });
+
+    it("respects OPENAI_API_KEY_ENV for the baked bearer value", async () => {
+      const configHome = await makeConfigHome({ permission: { read: "allow" } });
+      const prepared = await prepareOpenCodeRuntimeConfig({
+        env: {
+          XDG_CONFIG_HOME: configHome,
+          OPENAI_BASE_URL: "https://api.vilao.ai/v1",
+          OPENAI_API_KEY_ENV: "VILAO_API_KEY",
+          VILAO_API_KEY: "sk-vilao-eventual",
+        },
+        config: {},
+      });
+      cleanupPaths.add(prepared.env.XDG_CONFIG_HOME);
+      const runtimeConfig = JSON.parse(
+        await fs.readFile(path.join(prepared.env.XDG_CONFIG_HOME, "opencode", "opencode.json"), "utf8"),
+      ) as { provider: { openai_custom: { options: { apiKey: string } } } };
+      expect(runtimeConfig.provider.openai_custom.options.apiKey).toBe("sk-vilao-eventual");
+      await prepared.cleanup();
+      cleanupPaths.delete(prepared.env.XDG_CONFIG_HOME);
+    });
+
+    it("leaves the {env:...} placeholder intact when the key is absent", async () => {
+      const configHome = await makeConfigHome({ permission: { read: "allow" } });
+      const prepared = await prepareOpenCodeRuntimeConfig({
+        env: { XDG_CONFIG_HOME: configHome, OPENAI_BASE_URL: "https://api.vilao.ai/v1" },
+        config: {},
+      });
+      cleanupPaths.add(prepared.env.XDG_CONFIG_HOME);
+      const runtimeConfig = JSON.parse(
+        await fs.readFile(path.join(prepared.env.XDG_CONFIG_HOME, "opencode", "opencode.json"), "utf8"),
+      ) as { provider: { openai_custom: { options: { apiKey: string } } } };
+      expect(runtimeConfig.provider.openai_custom.options.apiKey).toBe("{env:OPENAI_API_KEY}");
+      await prepared.cleanup();
+      cleanupPaths.delete(prepared.env.XDG_CONFIG_HOME);
+    });
+
+    it("registers the configured provider/model on the synthesized provider", async () => {
+      const configHome = await makeConfigHome({ permission: { read: "allow" } });
+      const prepared = await prepareOpenCodeRuntimeConfig({
+        env: { XDG_CONFIG_HOME: configHome, OPENAI_BASE_URL: "https://api.vilao.ai/v1" },
+        config: { model: "openai_custom/gpt-4o" },
+      });
+      cleanupPaths.add(prepared.env.XDG_CONFIG_HOME);
+      const runtimeConfig = JSON.parse(
+        await fs.readFile(path.join(prepared.env.XDG_CONFIG_HOME, "opencode", "opencode.json"), "utf8"),
+      ) as { provider: { openai_custom: { models: Record<string, unknown> } } };
+      expect(runtimeConfig.provider.openai_custom.models).toEqual({ "gpt-4o": {} });
+      expect(prepared.notes.some((n) => n.includes("Registered configured model"))).toBe(true);
+      await prepared.cleanup();
+      cleanupPaths.delete(prepared.env.XDG_CONFIG_HOME);
+    });
+
+    it("uses PAPERCLIP_OPENCODE_PROVIDERS when both JSON and OPENAI_BASE_URL are set", async () => {
+      const configHome = await makeConfigHome({ permission: { read: "allow" } });
+      const providers = {
+        bifrost: { npm: "@ai-sdk/openai-compatible", models: { "example/model-a": {} } },
+      };
+      const prepared = await prepareOpenCodeRuntimeConfig({
+        env: {
+          XDG_CONFIG_HOME: configHome,
+          OPENAI_BASE_URL: "https://api.vilao.ai/v1",
+          PAPERCLIP_OPENCODE_PROVIDERS: JSON.stringify(providers),
+        },
+        config: {},
+      });
+      cleanupPaths.add(prepared.env.XDG_CONFIG_HOME);
+      const runtimeConfig = JSON.parse(
+        await fs.readFile(path.join(prepared.env.XDG_CONFIG_HOME, "opencode", "opencode.json"), "utf8"),
+      ) as { provider: Record<string, unknown> };
+      expect(runtimeConfig.provider.bifrost).toBeDefined();
+      expect(runtimeConfig.provider.openai_custom).toBeUndefined();
+      expect(prepared.notes.some((n) => n.includes("OPENAI_BASE_URL"))).toBe(false);
+      await prepared.cleanup();
+      cleanupPaths.delete(prepared.env.XDG_CONFIG_HOME);
+    });
+
+    it("stays silent when OPENAI_BASE_URL is empty", async () => {
+      const configHome = await makeConfigHome({ permission: { read: "allow" } });
+      const prepared = await prepareOpenCodeRuntimeConfig({
+        env: { XDG_CONFIG_HOME: configHome, OPENAI_BASE_URL: "" },
+        config: {},
+      });
+      cleanupPaths.add(prepared.env.XDG_CONFIG_HOME);
+      const runtimeConfig = JSON.parse(
+        await fs.readFile(path.join(prepared.env.XDG_CONFIG_HOME, "opencode", "opencode.json"), "utf8"),
+      ) as Record<string, unknown>;
+      expect(runtimeConfig.provider).toBeUndefined();
+      expect(prepared.notes.some((n) => n.includes("OPENAI_BASE_URL"))).toBe(false);
+      await prepared.cleanup();
+      cleanupPaths.delete(prepared.env.XDG_CONFIG_HOME);
+    });
+  });
+
   it("respects explicit opt-out", async () => {
     const configHome = await makeConfigHome();
     const prepared = await prepareOpenCodeRuntimeConfig({

@@ -211,3 +211,45 @@ These are set automatically by the server when invoking agents:
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | Anthropic API key (for Claude Code adapter) |
 | `OPENAI_API_KEY` | OpenAI API key (for Codex adapter) |
+
+### OpenAI-compatible gateways (Vilao, etc.)
+
+Use any OpenAI-compatible `base_url` (a gateway, a proxy, or a model
+marketplace such as Vilao AI at `https://api.vilao.ai/v1`) without authoring
+provider JSON by hand. `OPENAI_BASE_URL` is a fallback that synthesizes the
+same `openai_custom` provider for **both** adapters at once. The JSON envs are
+always authoritative: when `PAPERCLIP_CODEX_PROVIDERS` (or
+`PAPERCLIP_OPENCODE_PROVIDERS`) is set, the fallback is ignored, so operators
+who need several providers, custom provider ids, or extra Codex/OpenCode
+fields keep full control.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_BASE_URL` | (unset) | Generic OpenAI-compatible base URL fallback. When set and the corresponding `PAPERCLIP_*_PROVIDERS` JSON is absent, Paperclip synthesizes a single `openai_custom` provider backed by this URL. Example: `https://api.vilao.ai/v1` (Vilao AI). |
+| `OPENAI_API_KEY_ENV` | `OPENAI_API_KEY` | Env var name that holds the bearer key for the synthesized `openai_custom` provider. Example: `VILAO_API_KEY` when the marketplace key is stored under that name. |
+| `OPENAI_WIRE_API` | `responses` | Codex wire protocol for the synthesized provider. Use `chat_completions` when the gateway does not implement the Responses API. |
+| `PAPERCLIP_CODEX_PROVIDERS` | (unset) | JSON `{ providers: { <id>: { name, base_url, env_key, wire_api, query_params, http_headers, ... } }, model_provider: "<id>" }` merged into `$CODEX_HOME/config.toml` as `[model_providers.<id>]` tables. Overrides `OPENAI_BASE_URL` when set. See `packages/adapters/codex-local/src/server/runtime-config.ts`. |
+| `PAPERCLIP_OPENCODE_PROVIDERS` | (unset) | JSON `{ <id>: { npm: "@ai-sdk/openai-compatible", name, options: { baseURL, apiKey }, models: { "<model>": {} } } }` merged into the runtime `opencode.json` `provider` object. Overrides `OPENAI_BASE_URL` when set. See `packages/adapters/opencode-local/src/server/runtime-config.ts`. |
+| `PAPERCLIP_OPENCODE_SMALL_MODEL` | (unset) | Pin OpenCode's auxiliary `small_model` (session-title helper) to an explicit `provider/model`. Set it to a model served by the gateway so the title-gen call does not fall back to an unsupported default. |
+
+Quickstart (Vilao):
+
+```sh
+# One-line fallback (both adapters point at Vilao):
+OPENAI_BASE_URL=https://api.vilao.ai/v1
+OPENAI_API_KEY=sk-vilao-...            # or VILAO_API_KEY with OPENAI_API_KEY_ENV=VILAO_API_KEY
+# then select a Vilao-served model in the agent:
+#   codex_local  agent: model = "gpt-4o"                    (model_provider is openai_custom)
+#   opencode_local agent: model = "openai_custom/gpt-4o"
+
+# Full control via JSON (overrides the fallback):
+PAPERCLIP_CODEX_PROVIDERS='{"providers":{"vilao":{"name":"Vilao","base_url":"https://api.vilao.ai/v1","env_key":"OPENAI_API_KEY","wire_api":"responses"}},"model_provider":"vilao"}'
+PAPERCLIP_OPENCODE_PROVIDERS='{"vilao":{"npm":"@ai-sdk/openai-compatible","name":"Vilao","options":{"baseURL":"https://api.vilao.ai/v1","apiKey":"{env:OPENAI_API_KEY}"},"models":{"gpt-4o":{}}}}'
+PAPERCLIP_OPENCODE_SMALL_MODEL=vilao/gpt-4o-mini
+```
+
+`{env:VAR}` placeholders under `PAPERCLIP_*_PROVIDERS` are expanded server-side
+(retained for fields that must carry a literal value, such as OpenCode
+`options.apiKey` or Codex `http_headers`).
+
+## Secrets

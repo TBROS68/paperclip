@@ -21,6 +21,47 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// Resolve the raw PAPERCLIP_OPENCODE_PROVIDERS value, falling back to the
+// convenience env trio when the JSON is not set.
+//
+// OPENAI_BASE_URL routes OpenCode at any OpenAI-compatible endpoint (a gateway,
+// a proxy, a model marketplace such as Vilao AI) without requiring the operator
+// to author the provider-shaped JSON. The JSON stays authoritative: an explicit
+// PAPERCLIP_OPENCODE_PROVIDERS always wins, so operators who need extra provider
+// fields (several providers, custom npm/name/options, per-model metadata) keep
+// full control and this fallback never silently overrides them.
+//
+// The synthesized provider id is fixed at "openai_custom" (distinct from the
+// built-in "openai" provider) and uses the @ai-sdk/openai-compatible SDK so any
+// OpenAI-compatible server works. The apiKey is expressed as an {env:...}
+// placeholder so expandEnvPlaceholders can bake the literal bearer value
+// server-side (see the "bakes the literal vk" test), and the models map is left
+// empty: prepareOpenCodeRuntimeConfig auto-registers the configured `--model
+// provider/model` (e.g. openai_custom/gpt-4o) via the configuredModel block.
+function resolveOpenCodeProvidersRaw(
+  env: Record<string, string>,
+): { raw: string; synthesizedFromBaseUrl: boolean } | null {
+  const json = env.PAPERCLIP_OPENCODE_PROVIDERS ?? process.env.PAPERCLIP_OPENCODE_PROVIDERS;
+  if (typeof json === "string" && json.trim().length > 0) {
+    return { raw: json, synthesizedFromBaseUrl: false };
+  }
+  const baseUrl = (env.OPENAI_BASE_URL ?? process.env.OPENAI_BASE_URL)?.trim();
+  if (!baseUrl) return null;
+  const envKey =
+    (env.OPENAI_API_KEY_ENV ?? process.env.OPENAI_API_KEY_ENV)?.trim() || "OPENAI_API_KEY";
+  return {
+    raw: JSON.stringify({
+      openai_custom: {
+        npm: "@ai-sdk/openai-compatible",
+        name: "openai_custom",
+        options: { baseURL: baseUrl, apiKey: `{env:${envKey}}` },
+        models: {},
+      },
+    }),
+    synthesizedFromBaseUrl: true,
+  };
+}
+
 // Recursively replace {env:VAR} placeholders with the resolved value. Used to bake
 // gateway provider secrets (e.g. the LLM-gateway virtual key) into opencode.json
 // SERVER-SIDE, where the value is reliably present. OpenCode's own {env:...}
@@ -153,26 +194,30 @@ export async function prepareOpenCodeRuntimeConfig(input: {
     "Injected runtime OpenCode config with permission=allow for all tools and connections.",
   ];
 
-  // Merge gateway/custom provider definitions supplied via PAPERCLIP_OPENCODE_PROVIDERS
-  // (a JSON object in OpenCode's `provider` shape). OpenCode resolves a `--model
-  // provider/model` only when that model exists in a provider's `models` map, and
-  // OPENCODE_ALLOW_ALL_MODELS does NOT bypass its internal getModel(). So routing a
-  // gateway model (e.g. an EU LLM gateway exposing OpenAI-compatible /v1) requires a
-  // custom provider with an explicit models map. We accept it as config (not
-  // hard-coded) so the gateway URL, key env, and model list stay declarative.
+  // Merge gateway/custom provider definitions. The authoritative source is
+  // PAPERCLIP_OPENCODE_PROVIDERS; when it is not set, OPENAI_BASE_URL
+  // synthesizes a single openai_custom provider so a one-line env is enough.
+  // (A JSON object in OpenCode's `provider` shape). OpenCode resolves a
+  // `--model provider/model` only when that model exists in a provider's
+  // `models` map, and OPENCODE_ALLOW_ALL_MODELS does NOT bypass its internal
+  // getModel(). So routing a gateway model (e.g. an EU LLM gateway exposing
+  // OpenAI-compatible /v1) requires a custom provider with an explicit models
+  // map. We accept it as config (not hard-coded) so the gateway URL, key env,
+  // and model list stay declarative.
   const resolveEnv = (name: string): string | undefined => input.env[name] ?? process.env[name];
-  const gatewayProviders = parseProviderConfig(
-    input.env.PAPERCLIP_OPENCODE_PROVIDERS ?? process.env.PAPERCLIP_OPENCODE_PROVIDERS,
-    resolveEnv,
-    notes,
-  );
+  const resolvedProviders = resolveOpenCodeProvidersRaw(input.env);
+  const gatewayProviders = resolvedProviders
+    ? parseProviderConfig(resolvedProviders.raw, resolveEnv, notes)
+    : null;
   const existingProvider = isPlainObject(existingConfig.provider) ? existingConfig.provider : {};
   let nextProvider = gatewayProviders
     ? { ...existingProvider, ...gatewayProviders }
     : existingProvider;
   if (gatewayProviders) {
     notes.push(
-      `Injected ${Object.keys(gatewayProviders).length} custom OpenCode provider(s) from PAPERCLIP_OPENCODE_PROVIDERS: ${Object.keys(gatewayProviders).join(", ")}.`,
+      resolvedProviders?.synthesizedFromBaseUrl
+        ? `Synthesized OpenCode provider "openai_custom" from OPENAI_BASE_URL; set PAPERCLIP_OPENCODE_PROVIDERS to override.`
+        : `Injected ${Object.keys(gatewayProviders).length} custom OpenCode provider(s) from PAPERCLIP_OPENCODE_PROVIDERS: ${Object.keys(gatewayProviders).join(", ")}.`,
     );
   }
 

@@ -143,6 +143,47 @@ function parseCodexProvidersConfig(
   return { providers, modelProvider };
 }
 
+// Resolve the raw PAPERCLIP_CODEX_PROVIDERS value, falling back to the
+// convenience env trio when the JSON is not set.
+//
+// OPENAI_BASE_URL points codex at any OpenAI-compatible endpoint (a gateway, a
+// proxy, a model marketplace such as Vilao AI) without requiring the operator to
+// author the TOML-shaped JSON. The JSON stays authoritative: an explicit
+// PAPERCLIP_CODEX_PROVIDERS always wins, so operators who need extra provider
+// fields (query_params, http_headers, several providers, a custom id) keep full
+// control and this fallback never silently overrides them.
+//
+// The synthesized provider id is fixed at "openai_custom" so it never collides
+// with codex's built-in "openai" provider table, whose base_url/env_key must
+// stay under the operator's control.
+function resolveCodexProvidersRaw(
+  env: Record<string, string>,
+): { raw: string; synthesizedFromBaseUrl: boolean } | null {
+  const json = env.PAPERCLIP_CODEX_PROVIDERS ?? process.env.PAPERCLIP_CODEX_PROVIDERS;
+  if (typeof json === "string" && json.trim().length > 0) {
+    return { raw: json, synthesizedFromBaseUrl: false };
+  }
+  const baseUrl = (env.OPENAI_BASE_URL ?? process.env.OPENAI_BASE_URL)?.trim();
+  if (!baseUrl) return null;
+  const envKey =
+    (env.OPENAI_API_KEY_ENV ?? process.env.OPENAI_API_KEY_ENV)?.trim() || "OPENAI_API_KEY";
+  const wireApi = (env.OPENAI_WIRE_API ?? process.env.OPENAI_WIRE_API)?.trim() || "responses";
+  return {
+    raw: JSON.stringify({
+      providers: {
+        openai_custom: {
+          name: "openai_custom",
+          base_url: baseUrl,
+          env_key: envKey,
+          wire_api: wireApi,
+        },
+      },
+      model_provider: "openai_custom",
+    }),
+    synthesizedFromBaseUrl: true,
+  };
+}
+
 function escapeTomlString(value: string): string {
   // TOML 1.0 basic strings require escaping U+0000-U+001F and U+007F (DEL).
   return value.replace(/[\\"\u0000-\u001f\u007f]/g, (char) => {
@@ -339,17 +380,24 @@ export async function prepareCodexRuntimeConfig(input: {
 }): Promise<PreparedCodexRuntimeConfig> {
   const resolveEnv = (name: string): string | undefined => input.env[name] ?? process.env[name];
   const notes: string[] = [];
-  const parsed = parseCodexProvidersConfig(
-    input.env.PAPERCLIP_CODEX_PROVIDERS ?? process.env.PAPERCLIP_CODEX_PROVIDERS,
-    resolveEnv,
-    notes,
-  );
+  const resolved = resolveCodexProvidersRaw(input.env);
+  const parsed = resolved
+    ? parseCodexProvidersConfig(resolved.raw, resolveEnv, notes)
+    : null;
+  if (resolved?.synthesizedFromBaseUrl) {
+    notes.push(
+      `Synthesized Codex provider "openai_custom" from OPENAI_BASE_URL=${resolved ? "set" : ""}; set PAPERCLIP_CODEX_PROVIDERS to override.`,
+    );
+  }
 
   if (!parsed) {
     // Self-heal state left behind by a crashed run (cleanup() never ran).
     if (input.codexHome) {
       const configTomlPath = path.join(input.codexHome, "config.toml");
-      const reason = notes.length === 0 ? " (PAPERCLIP_CODEX_PROVIDERS is no longer set)" : "";
+      const reason =
+        notes.length === 0 || resolved
+          ? ""
+          : " (PAPERCLIP_CODEX_PROVIDERS is no longer set)";
       const backupPath = configTomlBackupPath(configTomlPath);
       const backup = await readFileOrNull(backupPath);
       if (backup !== null) {
@@ -388,7 +436,9 @@ export async function prepareCodexRuntimeConfig(input: {
     return {
       notes: [
         ...notes,
-        "PAPERCLIP_CODEX_PROVIDERS is set but the adapter config explicitly sets env.CODEX_HOME; leaving the user-managed Codex home untouched (no model provider merge).",
+        resolved?.synthesizedFromBaseUrl
+          ? "OPENAI_BASE_URL is set but the adapter config explicitly sets env.CODEX_HOME; leaving the user-managed Codex home untouched (no model provider merge)."
+          : "PAPERCLIP_CODEX_PROVIDERS is set but the adapter config explicitly sets env.CODEX_HOME; leaving the user-managed Codex home untouched (no model provider merge).",
       ],
       cleanup: async () => {},
     };
@@ -414,7 +464,7 @@ export async function prepareCodexRuntimeConfig(input: {
   return {
     notes: [
       ...notes,
-      `Merged ${providerNames.length} custom Codex model provider(s) from PAPERCLIP_CODEX_PROVIDERS into "${configTomlPath}": ${providerNames.join(", ")}${
+      `Merged ${providerNames.length} custom Codex model provider(s) ${resolved?.synthesizedFromBaseUrl ? "from OPENAI_BASE_URL" : "from PAPERCLIP_CODEX_PROVIDERS"} into "${configTomlPath}": ${providerNames.join(", ")}${
         parsed.modelProvider ? `; selected model_provider "${parsed.modelProvider}"` : ""
       }.`,
     ],

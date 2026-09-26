@@ -31,6 +31,19 @@ When a heartbeat fires, Paperclip:
 | [Process](/adapters/process) | `process` | Executes arbitrary shell commands |
 | [HTTP](/adapters/http) | `http` | Sends webhooks to external agents |
 
+### OpenAI-compatible gateways (Vilao, etc.)
+
+`codex_local` and `opencode_local` both understand any OpenAI-compatible
+`base_url`. The simplest way is the fallback `OPENAI_BASE_URL` (e.g.
+`https://api.vilao.ai/v1` for Vilao AI's 300+ model marketplace) — it
+synthesizes a single `openai_custom` provider for both adapters at once. When
+`PAPERCLIP_CODEX_PROVIDERS` (or `PAPERCLIP_OPENCODE_PROVIDERS`) is set, that
+JSON is authoritative and the fallback is ignored. `OPENAI_API_KEY_ENV`
+selects which env var holds the bearer key, and `OPENAI_WIRE_API`
+(`responses` by default, `chat_completions` on gateways that need it) controls
+Codex's wire protocol. See [Environment Variables](/deploy/environment-variables#llm-provider-keys-for-adapters) for the full reference and the
+Vilao quickstart.
+
 ## Credential ownership for sandbox targets
 
 Local CLI adapters can run on the Paperclip host, SSH targets, or managed
