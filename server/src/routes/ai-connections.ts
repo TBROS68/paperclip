@@ -143,6 +143,7 @@ export async function validateAiApiKey(
     openai: "https://api.openai.com/v1/models",
     openrouter: "https://openrouter.ai/api/v1/key",
     xai: "https://api.x.ai/v1/models",
+    vilao: "https://api.vilao.ai/v1/models",
   };
   let response: Response;
   try {

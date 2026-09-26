@@ -23,6 +23,7 @@ export const AI_PROVIDERS: Record<
     subscriptionName: "Grok subscription",
     logo: "/brands/adapters/grok.svg",
   },
+  vilao: { name: "Vilao", logo: "/brands/apps/vilao.svg" },
 };
 
 export type AiConnectionSummary = Omit<AiManagedConnectionSummary, "isDefault"> & { isDefault?: boolean };

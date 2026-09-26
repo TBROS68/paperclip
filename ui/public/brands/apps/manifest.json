@@ -515,6 +515,13 @@
       "provider": "Zep",
       "catalogVisible": true,
       "localAsset": "/brands/apps/zep.png"
+    },
+    {
+      "slug": "vilao",
+      "provider": "Vilao",
+      "catalogVisible": true,
+      "localAsset": "/brands/apps/vilao.svg",
+      "darkAsset": "/brands/apps/vilao-dark.svg"
     }
   ]
 }

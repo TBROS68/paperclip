@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "slug": "vilao",
+  "name": "Vilao",
+  "description": "Connect Vilao accounts for your agents.",
+  "categories": [
+    "ai"
+  ],
+  "branding": {
+    "logoUrl": "/brands/apps/vilao.svg",
+    "darkLogoUrl": "/brands/apps/vilao-dark.svg"
+  },
+  "urlPatterns": [
+    "https://api.vilao.ai/*"
+  ],
+  "methods": [
+    {
+      "key": "ai-api_key",
+      "label": "Vilao API key",
+      "purpose": "ai",
+      "transport": "runtime_auth",
+      "auth": "api_key",
+      "ai": {
+        "provider": "vilao",
+        "method": "api_key"
+      },
+      "grantKinds": [
+        "user",
+        "organization"
+      ],
+      "ownershipModes": [
+        "customer"
+      ],
+      "whenToUse": "Authenticate an agent with this account.",
+      "guidanceMd": "Use your personal account or an explicitly shared company account.",
+      "riskTier": "S3",
+      "credentialFields": [
+        {
+          "key": "apiKey",
+          "label": "API key",
+          "type": "password",
+          "required": true,
+          "placeholder": "Enter API key",
+          "secret": true
+        }
+      ],
+      "keyPlacement": {
+        "location": "env",
+        "name": "VILAO_API_KEY"
+      }
+    }
+  ]
+}

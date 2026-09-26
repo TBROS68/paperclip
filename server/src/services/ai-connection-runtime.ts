@@ -278,6 +278,15 @@ export async function prepareManagedAiRuntime(
       );
     if (subscriptionFile) await writeFile(authFile, value, { mode: 0o600 });
     else env[capability.envKey] = value;
+    // A gateway that speaks an OpenAI-compatible API is reached at its own
+    // base URL. Every AI_AUTH_ENV_KEY above is blanked for a managed run, so
+    // the routing the adapter would otherwise inherit from the server process
+    // has to be re-stated here — including the name of the key it should read,
+    // which is not OPENAI_API_KEY for a gateway with its own credential.
+    if (capability.baseUrl) {
+      env.OPENAI_BASE_URL = capability.baseUrl;
+      env.OPENAI_API_KEY_ENV = capability.envKey;
+    }
     if (
       input.binding.provider === "openai" &&
       selection.attribution.method === "api_key"

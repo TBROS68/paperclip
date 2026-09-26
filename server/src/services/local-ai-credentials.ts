@@ -10,6 +10,7 @@ import { unprocessable } from "../errors.js";
 /** Read an owned login home, or an explicitly authorized local-operator import. */
 export async function readVerifiedLocalAiCredential(provider: AiProvider, loginHome?: string): Promise<string> {
   if (provider === "openrouter") throw unprocessable("OpenRouter requires an API key.");
+  if (provider === "vilao") throw unprocessable("Vilao requires an API key.");
   if ((provider === "openai" || provider === "xai") && !loginHome)
     throw unprocessable("Start a separate local sign-in for this connection before connecting.");
   try {

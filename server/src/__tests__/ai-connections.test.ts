@@ -213,6 +213,27 @@ describe("managed AI connections", () => {
     expect(a.config.model).toBe("unchanged-model"); expect(config.env.ANTHROPIC_API_KEY).toBe("project-never-use");
     await Promise.all([a.cleanup(), b.cleanup()]); await expect(access(ae.HOME)).rejects.toThrow();
   });
+  it("states the gateway routing a Vilao connection needs inside the run it is installed on", async () => {
+    const codexAgentId = randomUUID();
+    await db.insert(agents).values({ id: codexAgentId, companyId, name: "Codex on Vilao", adapterType: "codex_local" });
+    const vilao = await service.save(companyId, "alice", { provider: "vilao", method: "api_key", ownership: "shared", name: "Vilao", apiKey: "vilao-fixture", agentIds: [codexAgentId], allAgents: false }, "vilao-fixture");
+    const run = await prepareManagedAiRuntime(db, {
+      companyId,
+      agentId: codexAgentId,
+      responsibleUserId: "alice",
+      adapterType: "codex_local",
+      binding: { provider: "vilao", method: "api_key", mode: "shared", connectionId: vilao.connectionId, grantId: vilao.grantId },
+      config: { model: "gpt-4o" },
+    });
+    const env = run.config.env as Record<string, string>;
+    expect(env.VILAO_API_KEY).toBe("vilao-fixture");
+    // A managed run blanks every AI auth key, so the adapter would otherwise
+    // find neither the gateway URL nor the name its key is stored under.
+    expect(env.OPENAI_BASE_URL).toBe("https://api.vilao.ai/v1");
+    expect(env.OPENAI_API_KEY_ENV).toBe("VILAO_API_KEY");
+    expect(env.OPENAI_API_KEY).toBe("");
+    await run.cleanup();
+  });
   it("blocks missing identity, incompatible providers, and cross-company explicit selections", async () => {
     await expect(service.select({ ...input, userId: null })).rejects.toThrow("responsible user");
     await expect(service.select({ ...input, userId: "alice", adapterType: "codex_local" })).rejects.toThrow("compatible");
@@ -463,6 +484,9 @@ describe("managed AI connections", () => {
     expect(isAiConnectionCompatible(binding, "paperclip_runner", "same-model", "acpx", "claude")).toBe(true);
     expect(isAiConnectionCompatible(binding, "paperclip_runner", "same-model", "acpx", "codex")).toBe(false);
     expect(isAiConnectionCompatible({ provider: "openrouter", method: "api_key" }, "opencode_local", "anthropic/model")).toBe(false);
+    expect(isAiConnectionCompatible({ provider: "vilao", method: "api_key" }, "codex_local")).toBe(true);
+    expect(isAiConnectionCompatible({ provider: "vilao", method: "api_key" }, "opencode_local")).toBe(true);
+    expect(isAiConnectionCompatible({ provider: "vilao", method: "api_key" }, "claude_local")).toBe(false);
   });
   it("does not let a forged delegation bypass human access or accept an expired subscription attempt", async () => {
     const selected = await service.select({ ...input, userId: "alice" });
@@ -612,6 +636,12 @@ describe("managed AI connections", () => {
     const request = vi.fn().mockResolvedValue(new Response("secret-provider-body", { status: 401 }));
     await expect(validateAiApiKey("anthropic", "fixture", request)).rejects.toThrow("rejected");
     expect(request.mock.calls[0][1].redirect).toBe("error");
+  });
+  it("verifies a Vilao key against Vilao's own OpenAI-compatible endpoint", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    await validateAiApiKey("vilao", "fixture", request);
+    expect(request.mock.calls[0][0]).toBe("https://api.vilao.ai/v1/models");
+    expect((request.mock.calls[0][1].headers as Record<string, string>).Authorization).toBe("Bearer fixture");
   });
   it("uses the authenticated responsible user for agent-originated configuration and tests", async () => {
     const req = { actor: { type: "agent", agentId, onBehalfOfUserId: "alice" } } as express.Request;

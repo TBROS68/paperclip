@@ -31,6 +31,7 @@ export const AI_PROVIDERS = [
   "openai",
   "openrouter",
   "xai",
+  "vilao",
 ] as const;
 export const aiProviderSchema = z.enum(AI_PROVIDERS);
 export const aiAuthMethodSchema = z.enum(["subscription", "api_key"]);
@@ -67,14 +68,20 @@ export type AiConnectionBinding = z.infer<typeof aiConnectionBindingSchema>;
 export const aiConnectionMetadataSchema = z.object(requirement).strict();
 export type AiConnectionMetadata = z.infer<typeof aiConnectionMetadataSchema>;
 
+/** A provider that speaks an OpenAI-compatible API carries its own base URL. */
+export type AiProviderAuthMethod = {
+  adapters: readonly string[];
+  envKey: string;
+  /** Set only by gateways: the OpenAI-compatible endpoint this provider is reached at. */
+  baseUrl?: string;
+};
+
 /** Existing integrations only. This table describes compatibility, never routing. */
 export const AI_CONNECTION_CAPABILITIES: Record<
   AiProvider,
   {
     name: string;
-    methods: Partial<
-      Record<AiAuthMethod, { adapters: readonly string[]; envKey: string }>
-    >;
+    methods: Partial<Record<AiAuthMethod, AiProviderAuthMethod>>;
   }
 > = {
   anthropic: {
@@ -105,6 +112,16 @@ export const AI_CONNECTION_CAPABILITIES: Record<
     methods: {
       subscription: { adapters: ["grok_local"], envKey: "GROK_HOME" },
       api_key: { adapters: ["grok_local"], envKey: "XAI_API_KEY" },
+    },
+  },
+  vilao: {
+    name: "Vilao",
+    methods: {
+      api_key: {
+        adapters: ["codex_local", "opencode_local"],
+        envKey: "VILAO_API_KEY",
+        baseUrl: "https://api.vilao.ai/v1",
+      },
     },
   },
 };

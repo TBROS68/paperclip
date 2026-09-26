@@ -8,6 +8,7 @@ export const PROVIDER_ENV_KEYS: Record<string, string> = {
   xai: "XAI_API_KEY",
   groq: "GROQ_API_KEY",
   opencode: "OPENCODE_API_KEY",
+  vilao: "VILAO_API_KEY",
 };
 
 /** New organization credentials get a distinct key; never rotate another agent's secret. */

@@ -3327,10 +3327,15 @@ export function agentRoutes(
       return result;
     }
     if (!result.checks.some(check => check.code.includes("hello_probe"))) {
-      const providerAdapter = { anthropic: "claude_local", openai: "codex_local", openrouter: "opencode_local", xai: "grok_local" }[binding.provider];
-      const probe = await requireServerAdapter(providerAdapter).testEnvironment({ ...context, adapterType: providerAdapter, config: { ...context.config, engine: "cli" } });
-      result.checks.push(...probe.checks);
-      result.status = probe.status === "fail" ? "fail" : result.status === "warn" || probe.status === "warn" ? "warn" : "pass";
+      // The same table that decides which adapters a provider can drive.
+      // A provider with no subscription method (a gateway such as Vilao, whose
+      // only lane is an API key) has no CLI to probe and returns above.
+      const providerAdapter = AI_CONNECTION_CAPABILITIES[binding.provider].methods.subscription?.adapters[0];
+      if (providerAdapter) {
+        const probe = await requireServerAdapter(providerAdapter).testEnvironment({ ...context, adapterType: providerAdapter, config: { ...context.config, engine: "cli" } });
+        result.checks.push(...probe.checks);
+        result.status = probe.status === "fail" ? "fail" : result.status === "warn" || probe.status === "warn" ? "warn" : "pass";
+      }
     }
     if (!result.checks.some(check => /hello_probe_(passed|succeeded)$/.test(check.code))) {
       result.status = "fail";
