@@ -6,7 +6,7 @@
 # Một file, chạy từ A đến Z cho người dùng mới:
 #   * Cài Docker Engine + Compose plugin nếu chưa có
 #   * Clone source từ TBROS68/paperclip (có tính năng OPENAI_BASE_URL / Vilao)
-#   * Build image Docker và chạy container (DB nhúng, UI đi kèm)
+#   * Build image Docker và chạy container (kèm PostgreSQL, UI đi kèm)
 #   * Cài Caddy (HTTPS tự động Let's Encrypt) cho tên miền ai.top1.us
 #   * Mở firewall (SSH / 80 / 443)
 #   * Kiểm tra sức khỏe và in tóm tắt cách dùng
@@ -209,14 +209,37 @@ write_env() {
   if ! grep -q "^BETTER_AUTH_SECRET=..*" "$ENV_FILE"; then
     set_env BETTER_AUTH_SECRET "$(openssl rand -hex 32)"
   fi
+  # Mật khẩu PostgreSQL nội bộ — sinh một lần, giữ nguyên khi chạy lại.
+  # Server "authenticated + public" KHÔNG cho dùng embedded DB, nên cần
+  # service db riêng với DATABASE_URL (xem comment trong compose.yml).
+  if ! grep -q "^POSTGRES_PASSWORD=..*" "$ENV_FILE"; then
+    set_env POSTGRES_PASSWORD "$(openssl rand -hex 16)"
+  fi
   ok "Đã cấu hình ${ENV_FILE} (permission 600)."
 
   # Compose file riêng: env_file truyền MỌI key trong .env vào container
   # (compose quickstart của repo chỉ đẩy một số key, thiếu OPENAI_BASE_URL).
+  # Kèm service db (PostgreSQL 17) vì deployment authenticated+public bắt
+  # buộc DATABASE_URL; db chỉ lộ trong mạng Docker (không publish port).
   info "Sinh ${COMPOSE_PATH}..."
   mkdir -p "$(dirname "$COMPOSE_PATH")"
   cat > "$COMPOSE_PATH" <<EOF
 services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: paperclip
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:-paperclip}
+      POSTGRES_DB: paperclip
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperclip -d paperclip"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
   paperclip:
     build:
       context: ../..
@@ -231,11 +254,16 @@ services:
     environment:
       HOST: "0.0.0.0"
       PAPERCLIP_HOME: "/paperclip"
+      DATABASE_URL: postgres://paperclip:\${POSTGRES_PASSWORD:-paperclip}@db:5432/paperclip
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
       - paperclip-data:/paperclip
 
 volumes:
   paperclip-data:
+  pgdata:
 EOF
   chmod 600 "$COMPOSE_PATH"
   ok "Đã sinh ${COMPOSE_PATH}."
@@ -346,9 +374,29 @@ do_update() {
   git -C "$APP_DIR" fetch --depth 1 origin "$GIT_BRANCH"
   git -C "$APP_DIR" reset --hard "origin/$GIT_BRANCH"
   cd "$APP_DIR"
+  # Sinh lại .env + compose.yml từ script mới (compose.yml là file sinh, không có
+  # trong git — nếu không sinh lại thì VPS vẫn chạy compose cũ).
+  ask_api_key
+  write_env
+  info "Build image Docker (Rust runner + UI + server — có thể mất 10–20 phút tùy VPS)..."
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
+  info "Chờ Paperclip khởi động trên cổng ${APP_PORT} (tối đa 5 phút)..."
+  local tries=0
+  until [ "$tries" -ge 60 ]; do
+    if curl -fsS "http://127.0.0.1:${APP_PORT}/api/health" >/dev/null 2>&1; then
+      ok "Paperclip đang chạy."
+      break
+    fi
+    tries=$((tries + 1)); sleep 5
+  done
+  if [ "$tries" -ge 60 ]; then
+    warn "Chưa thấy /api/health sau 5 phút. Kiểm tra log:"
+    warn "  cd $APP_DIR && docker compose --env-file $ENV_FILE -f $COMPOSE_FILE logs -f"
+    return 1
+  fi
   systemctl reload caddy >/dev/null 2>&1 || true
-  ok "Nâng cấp xong."
+  final_check
+  print_summary
 }
 
 do_uninstall() {
