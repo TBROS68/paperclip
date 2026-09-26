@@ -302,6 +302,20 @@ install_caddy() {
   ok "Caddy đã cài."
 }
 
+start_caddy_service() {
+  # Nạp cấu hình mới bằng cách RESTART service (không dùng `caddy reload`:
+  # lệnh đó cần admin API ở :2019 và sẽ fail nếu service chưa chạy).
+  systemctl enable caddy >/dev/null 2>&1 || true
+  local tries=0
+  while [ "$tries" -lt 5 ]; do
+    if systemctl restart caddy >/dev/null 2>&1 && systemctl is-active --quiet caddy; then
+      return 0
+    fi
+    tries=$((tries + 1)); sleep 3
+  done
+  return 1
+}
+
 configure_caddy() {
   info "Cấu hình Caddy cho ${DOMAIN} → 127.0.0.1:${APP_PORT}..."
   cat > "$CADDYFILE" <<EOF
@@ -311,10 +325,13 @@ ${DOMAIN} {
 	reverse_proxy 127.0.0.1:${APP_PORT}
 }
 EOF
-  caddy validate --config "$CADDYFILE" --adapter caddyfile
-  systemctl enable --now caddy >/dev/null 2>&1 || true
-  systemctl reload caddy >/dev/null 2>&1 || caddy reload --config "$CADDYFILE" --adapter caddyfile
-  ok "Caddy đã cấu hình; HTTPS sẽ được cấp tự động."
+  caddy validate --config "$CADDYFILE" --adapter caddyfile >/dev/null
+  if start_caddy_service; then
+    ok "Caddy đang chạy với cấu hình mới; HTTPS sẽ được cấp tự động."
+  else
+    warn "Không khởi động được service Caddy (kiểm tra: systemctl status caddy)."
+    warn "Chạy tay: systemctl restart caddy"
+  fi
 }
 
 configure_firewall() {
@@ -394,7 +411,15 @@ do_update() {
     warn "  cd $APP_DIR && docker compose --env-file $ENV_FILE -f $COMPOSE_FILE logs -f"
     return 1
   fi
-  systemctl reload caddy >/dev/null 2>&1 || true
+  if [ -f "$CADDYFILE" ] && command_exists caddy; then
+    if start_caddy_service; then
+      ok "Caddy đã nạp cấu hình mới."
+    else
+      warn "Không restart được Caddy — chạy tay: systemctl restart caddy"
+    fi
+  else
+    warn "Chưa có Caddy/Caddyfile — bỏ qua. Cài proxy khi cần: sudo bash $0 install"
+  fi
   final_check
   print_summary
 }
