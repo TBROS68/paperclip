@@ -317,6 +317,29 @@ port_in_use_by_other() {
   return 1
 }
 
+# Installer sở hữu :80 và :443 (redirect HTTP→HTTPS + ACME). Nếu một web server
+# quen thuộc đang giữ :80 thì dừng + disable nó (backup config trước).
+stop_conflicting_webserver() {
+  local unit sites="0"
+  for unit in nginx apache2 httpd openresty lighttpd; do
+    systemctl list-unit-files 2>/dev/null | grep -q "^${unit}\\.service" || continue
+    if systemctl is-active --quiet "$unit"; then
+      if command_exists nginx && [ "$unit" = "nginx" ]; then
+        sites="$(nginx -T 2>/dev/null | grep -c 'server_name' || true)"
+      fi
+      warn "Phát hiện ${unit} đang chiếm :80 — dừng và disable để Caddy dùng 80/443."
+      if [ "$sites" != "0" ]; then
+        warn "  ${unit} phục vụ ${sites} server_name — backup cấu hình tại /root/${unit}-config-backup.tar.gz"
+        tar czf "/root/${unit}-config-backup.tar.gz" \
+          "/etc/${unit}" 2>/dev/null || true
+      fi
+      systemctl stop "$unit" >/dev/null 2>&1 || true
+      systemctl disable "$unit" >/dev/null 2>&1 || true
+      sleep 2
+    fi
+  done
+}
+
 start_caddy_service() {
   # Nạp cấu hình mới bằng cách RESTART service (không dùng `caddy reload`:
   # lệnh đó cần admin API ở :2019 và sẽ fail nếu service chưa chạy).
@@ -334,13 +357,16 @@ start_caddy_service() {
 configure_caddy() {
   info "Cấu hình Caddy cho ${DOMAIN} → 127.0.0.1:${APP_PORT}..."
 
-  # Nhiều VPS có sẵn nginx/apache chiếm :80. Caddy mặc định tạo thêm listener :80
-  # để redirect + ACME HTTP-01 → sẽ fail với "bind: address already in use".
-  # `auto_https disable_redirects` bỏ listener đó; Let's Encrypt vẫn cấp được
-  # chứng chỉ qua TLS-ALPN-01 trên :443.
+  # Ưu tiên 1: dừng web server khác đang giữ :80 → Caddy dùng cả 80+443
+  # (redirect HTTP→HTTPS và ACME HTTP-01 đều bình thường).
+  if port_in_use_by_other 80 "caddy"; then
+    stop_conflicting_webserver
+  fi
+  # Ưu tiên 2: vẫn bị chiếm bởi process lạ → bỏ listener :80, ACME chuyển
+  # sang TLS-ALPN-01 trên :443.
   local global_block=""
   if port_in_use_by_other 80 "caddy"; then
-    warn "Cổng 80 đang bị process khác chiếm — Caddy chỉ lắng nghe :443 (không có redirect HTTP→HTTPS; ACME dùng TLS-ALPN-01)."
+    warn "Cổng 80 vẫn bị chiếm bởi process khác — Caddy chỉ lắng nghe :443 (không có redirect HTTP→HTTPS)."
     global_block="{
 	auto_https disable_redirects
 }
@@ -463,6 +489,12 @@ do_uninstall() {
   systemctl disable --now caddy >/dev/null 2>&1 || true
   rm -f "$CADDYFILE"
   info "Đã dừng container và gỡ Caddy proxy."
+  for backup in /root/nginx-config-backup.tar.gz; do
+    if [ -f "$backup" ]; then
+      info "Đã backup config web server cũ tại $backup. Khôi phục:"
+      info "  tar xzf $backup -C / && systemctl enable --now nginx"
+    fi
+  done
   info "Muốn xóa cả dữ liệu: docker volume rm paperclip-data; rm -rf $APP_DIR (không thể hoàn tác!)"
   ok "Xong."
 }
