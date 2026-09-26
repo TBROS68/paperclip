@@ -302,6 +302,21 @@ install_caddy() {
   ok "Caddy đã cài."
 }
 
+# Cổng có đang bị process KHÁC (không phải caddy) chiếm không?
+port_in_use_by_other() {
+  local port="$1" owner="$2" out=""
+  if command_exists ss; then
+    out="$(ss -ltnpH "sport = :${port}" 2>/dev/null || true)"
+    [ -n "$out" ] || return 1
+    printf '%s' "$out" | grep -q "$owner" && return 1
+    return 0
+  fi
+  if (exec 3<>"/dev/tcp/127.0.0.1/${port}") >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
 start_caddy_service() {
   # Nạp cấu hình mới bằng cách RESTART service (không dùng `caddy reload`:
   # lệnh đó cần admin API ở :2019 và sẽ fail nếu service chưa chạy).
@@ -318,8 +333,26 @@ start_caddy_service() {
 
 configure_caddy() {
   info "Cấu hình Caddy cho ${DOMAIN} → 127.0.0.1:${APP_PORT}..."
+
+  # Nhiều VPS có sẵn nginx/apache chiếm :80. Caddy mặc định tạo thêm listener :80
+  # để redirect + ACME HTTP-01 → sẽ fail với "bind: address already in use".
+  # `auto_https disable_redirects` bỏ listener đó; Let's Encrypt vẫn cấp được
+  # chứng chỉ qua TLS-ALPN-01 trên :443.
+  local global_block=""
+  if port_in_use_by_other 80 "caddy"; then
+    warn "Cổng 80 đang bị process khác chiếm — Caddy chỉ lắng nghe :443 (không có redirect HTTP→HTTPS; ACME dùng TLS-ALPN-01)."
+    global_block="{
+	auto_https disable_redirects
+}
+"
+  fi
+  if port_in_use_by_other 443 "caddy"; then
+    fail "Cổng 443 đang bị process khác chiếm — dừng process đó rồi chạy lại script."
+  fi
+
   cat > "$CADDYFILE" <<EOF
 # Cấu hình do install.sh sinh — Paperclip qua HTTPS tự động.
+${global_block}
 ${DOMAIN} {
 	encode gzip zstd
 	reverse_proxy 127.0.0.1:${APP_PORT}
@@ -329,7 +362,8 @@ EOF
   if start_caddy_service; then
     ok "Caddy đang chạy với cấu hình mới; HTTPS sẽ được cấp tự động."
   else
-    warn "Không khởi động được service Caddy (kiểm tra: systemctl status caddy)."
+    warn "Không khởi động được service Caddy. Log gần nhất:"
+    journalctl -u caddy -n 15 --no-pager 2>/dev/null | tail -15 || true
     warn "Chạy tay: systemctl restart caddy"
   fi
 }
@@ -411,14 +445,10 @@ do_update() {
     warn "  cd $APP_DIR && docker compose --env-file $ENV_FILE -f $COMPOSE_FILE logs -f"
     return 1
   fi
-  if [ -f "$CADDYFILE" ] && command_exists caddy; then
-    if start_caddy_service; then
-      ok "Caddy đã nạp cấu hình mới."
-    else
-      warn "Không restart được Caddy — chạy tay: systemctl restart caddy"
-    fi
+  if command_exists caddy; then
+    configure_caddy
   else
-    warn "Chưa có Caddy/Caddyfile — bỏ qua. Cài proxy khi cần: sudo bash $0 install"
+    warn "Chưa cài Caddy — bỏ qua proxy HTTPS. Cài khi cần: sudo bash $0 install"
   fi
   final_check
   print_summary
